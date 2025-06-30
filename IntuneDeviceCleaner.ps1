@@ -25,8 +25,23 @@ IntuneDeviceCleaner
 .DESCRIPTION
 IntuneDeviceCleaner
 
+.PARAMETER deviceCheckInDays
+Number of days since last device check-in to consider a device stale.
+
+.PARAMETER operatingSystem
+The operating system of the devices to filter by. Valid values are 'windows', 'ios', 'android', 'macos', 'linux'.
+
+.PARAMETER ownershipType
+The ownership type of the devices to filter by. Valid values are 'company', 'personal'.
+
+.PARAMETER enrolmentType
+The enrolment type of the devices to filter by. Valid values are 'windowsCoManagement', 'mdm'.
+
+.PARAMETER joinType
+The Entra Join Type of the devices to filter by. Valid values are 'azureADJoined', 'hybridAzureADJoined', 'azureADRegistered'.
+
 .PARAMETER whatIf
-Switch to enable WhatIf mode to simulate changes.
+Boolean; to enable WhatIf mode to simulate changes.
 
 .PARAMETER tenantId
 Provide the Id of the Entra ID tenant to connect to.
@@ -40,7 +55,6 @@ Provide the App secret to allow for authentication to graph
 .EXAMPLE
 Interactive Authentication
 .\IntuneDeviceCleaner.ps1
-
 
 .NOTES
 Version:        0.1
@@ -86,7 +100,7 @@ param(
     [String]$appSecret,
 
     [Parameter(Mandatory = $false, HelpMessage = 'WhatIf mode to simulate changes')]
-    [switch]$whatIf
+    [boolean]$whatIf
 
 )
 
