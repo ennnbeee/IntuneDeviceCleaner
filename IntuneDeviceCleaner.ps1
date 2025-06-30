@@ -46,30 +46,30 @@ Interactive Authentication
 Version:        0.1
 Author:         Nick Benton
 WWW:            oddsandendpoints.co.uk
-Creation Date:  27/09/2025
+Creation Date:  30/06/2025
 #>
 
 [CmdletBinding(DefaultParameterSetName = 'Default')]
 
 param(
 
-    [Parameter(Mandatory = $false, HelpMessage = '')]
+    [Parameter(Mandatory = $true, HelpMessage = 'Number of days since last device check-in to consider a device stale')]
     [ValidateRange(30, 270)]
     [int]$deviceCheckInDays,
 
-    [Parameter(Mandatory = $false, HelpMessage = '')]
+    [Parameter(Mandatory = $false, HelpMessage = 'The operating system of the devices to filter by')]
     [ValidateSet('windows', 'ios', 'android', 'macos', 'linux')]
     [string]$operatingSystem,
 
-    [Parameter(Mandatory = $false, HelpMessage = '')]
+    [Parameter(Mandatory = $false, HelpMessage = 'The ownership type of the devices to filter by')]
     [ValidateSet('company', 'personal')]
     [string]$ownershipType,
 
-    [Parameter(Mandatory = $false, HelpMessage = '')]
+    [Parameter(Mandatory = $false, HelpMessage = 'The enrolment type of the devices to filter by')]
     [ValidateSet('windowsCoManagement', 'mdm')]
     [string]$enrolmentType,
 
-    [Parameter(Mandatory = $false, HelpMessage = '')]
+    [Parameter(Mandatory = $false, HelpMessage = 'The Entra Join Type of the devices to filter by')]
     [ValidateSet('azureADJoined', 'hybridAzureADJoined', 'azureADRegistered')]
     [string]$joinType,
 
@@ -91,27 +91,6 @@ param(
 )
 
 #region Functions
-Function Test-JSON {
-
-    param (
-        $JSON
-    )
-
-    try {
-        $TestJSON = ConvertFrom-Json $JSON -ErrorAction Stop
-        $TestJSON | Out-Null
-        $validJson = $true
-    }
-    catch {
-        $validJson = $false
-        $_.Exception
-    }
-    if (!$validJson) {
-        Write-Host "Provided JSON isn't in valid JSON format" -ForegroundColor Red
-        break
-    }
-
-}
 Function Connect-ToGraph {
     <#
 .SYNOPSIS
@@ -225,9 +204,6 @@ Function Get-StaleManagedDevice() {
         break
     }
 }
-
-
-
 Function Set-StaleManagedDevice() {
 
     [cmdletbinding()]
@@ -252,7 +228,6 @@ Function Set-StaleManagedDevice() {
         break
     }
 }
-
 #endregion Functions
 
 #region intro
@@ -267,26 +242,30 @@ Write-Host '
 |     \.-----.--.--.|__|.----.-----.|      |  |.-----.---.-.-----.-----.----.
 |  --  |  -__|  |  ||  ||  __|  -__||   ---|  ||  -__|  _  |     |  -__|   _|
 |_____/|_____|\___/ |__||____|_____||______|__||_____|___._|__|__|_____|__|
-
 ' -ForegroundColor Green
 
 Write-Host 'IntuneDeviceCleaner - Removal of stale devices based on additional criteria' -ForegroundColor Green
 Write-Host 'Nick Benton - oddsandendpoints.co.uk' -NoNewline;
 Write-Host ' | Version' -NoNewline; Write-Host ' 0.1 Public Preview' -ForegroundColor Yellow -NoNewline
-Write-Host ' | Last updated: ' -NoNewline; Write-Host '2025-06-27' -ForegroundColor Magenta
+Write-Host ' | Last updated: ' -NoNewline; Write-Host '2025-06-30' -ForegroundColor Magenta
 Write-Host ''
 Write-Host 'If you have any feedback, please open an issue at https://github.com/ennnbeee/AutopilotGroupTagger/issues' -ForegroundColor Cyan
 Write-Host ''
 #endregion intro
 
 #region testing
-$deviceCheckInDays = 90
+<# For testing purposes, uncomment the following lines and set the parameters as needed.
+$deviceCheckInDays = 60
 $operatingSystem = 'windows'
 $ownershipType = 'company'
+$joinType = ''
+$enrolmentType = 'mdm'
+$whatIf = $true
+#>
 #endregion testing
 
 #region variables
-$requiredScopes = @('Device.ReadWrite.All', 'DeviceManagementManagedDevices.ReadWrite.All', 'DeviceManagementConfiguration.ReadWrite.All','DeviceManagementManagedDevices.PrivilegedOperations.All')
+$requiredScopes = @('DeviceManagementManagedDevices.ReadWrite.All', 'DeviceManagementManagedDevices.PrivilegedOperations.All')
 [String[]]$scopes = $requiredScopes -join ', '
 #endregion variables
 
@@ -362,26 +341,91 @@ Write-Host ''
 Write-Host 'All required scope permissions are present.' -ForegroundColor Green
 #endregion scopes
 
-
-
-$filteredStaleDevices = @()
+#region stale devices
+Write-Host "Checking for stale devices that haven't checked in for $deviceCheckInDays days..." -ForegroundColor Cyan
 $allStaleDevices = Get-StaleManagedDevice -days $deviceCheckInDays
+Write-Host "Found $($allStaleDevices.Count) stale devices that haven't checked in for $deviceCheckInDays days." -ForegroundColor Green
+Write-Host
+#endregion stale devices
 
+#region device filtering
+#OS
 $filteredStaleDevicesOS = @()
 if ($operatingSystem) {
     Write-Host "Filtering stale devices by operating system: $operatingSystem" -ForegroundColor Cyan
     $filteredStaleDevicesOS += $allStaleDevices | Where-Object { $_.operatingSystem -like "*$operatingSystem*" }
-    if ($filteredStaleDevicesOS.Count -eq 0) {
-        Write-Host "No stale devices found with operating system: $operatingSystem" -ForegroundColor Yellow
+    Write-Host "Found $($filteredStaleDevicesOS.Count) stale devices with operating system: $operatingSystem" -ForegroundColor Green
+    Write-Host ''
+}
+else {
+    $filteredStaleDevicesOS += $allStaleDevices
+}
+
+#ownership
+$filteredStaleDevicesOwnership = @()
+if ($ownershipType) {
+    Write-Host "Filtering stale devices by ownership: $ownershipType" -ForegroundColor Cyan
+    $filteredStaleDevicesOwnership += $filteredStaleDevicesOS | Where-Object { $_.ownerType -like "*$ownershipType*" }
+    Write-Host "Found $($filteredStaleDevicesOwnership.Count) stale devices with ownership: $ownershipType" -ForegroundColor Green
+    Write-Host ''
+}
+else {
+    $filteredStaleDevicesOwnership += $allStaleDevices
+}
+
+#enrolment
+$filteredStaleDevicesEnrolment = @()
+if ($enrolmentType) {
+    Write-Host "Filtering stale devices by enrolment: $enrolmentType" -ForegroundColor Cyan
+    $filteredStaleDevicesEnrolment += $filteredStaleDevicesOwnership | Where-Object { $_.managementAgent -like "*$enrolmentType*" }
+    Write-Host "Found $($filteredStaleDevicesEnrolment.Count) stale devices with enrolment: $enrolmentType" -ForegroundColor Green
+    Write-Host ''
+}
+else {
+    $filteredStaleDevicesEnrolment += $allStaleDevices
+}
+
+#joinType
+$filteredStaleDevicesJoin = @()
+if ($joinType) {
+    Write-Host "Filtering stale devices by Entra Join Type: $joinType" -ForegroundColor Cyan
+    $filteredStaleDevicesJoin += $filteredStaleDevicesEnrolment | Where-Object { $_.deviceEnrollmentType -like "*$joinType*" }
+    Write-Host "Found $($filteredStaleDevicesJoin.Count) stale devices with Entra Join Type: $joinType" -ForegroundColor Green
+    Write-Host ''
+}
+else {
+    $filteredStaleDevicesJoin += $allStaleDevices
+}
+
+#final filter
+$filteredStaleDevices = @()
+$filteredStaleDevices += $filteredStaleDevicesJoin
+If ($filteredStaleDevices.Count -eq 0) {
+    Write-Host "No stale devices found matching the specified criteria." -ForegroundColor Yellow
+    Write-Host "Please review the filters you have selected and try again." -ForegroundColor Yellow
+    exit
+}
+else {
+    Write-Host "Total stale devices after filtering: $($filteredStaleDevices.Count)" -ForegroundColor Green
+    Write-Host ''
+    Write-host "The following devices will be retired:" -ForegroundColor Cyan
+    $filteredStaleDevices | ForEach-Object {
+        Write-Host "$($_.deviceName), ID: $($_.id), Last Check-in: $($_.lastSyncDateTime)" -ForegroundColor white
+    }
+    Write-Warning "Please review the devices above before proceeding with retirement." -WarningAction Inquire
+}
+#endregion device filtering
+
+#region device retirement
+foreach ($filteredStaleDevice in $filteredStaleDevices) {
+    Write-Host "Processing stale device: $($filteredStaleDevice.deviceName) (ID: $($filteredStaleDevice.id))" -ForegroundColor Cyan
+    if ($whatIf -eq $true) {
+        Write-Host "WhatIf mode enabled: Device $($filteredStaleDevice.deviceName) (ID: $($filteredStaleDevice.id)) would be retired." -ForegroundColor Yellow
     }
     else {
-        Write-Host "Found $($filteredStaleDevicesOS.Count) stale devices with operating system: $operatingSystem" -ForegroundColor Green
+        Set-StaleManagedDevice -id $filteredStaleDevice.id
+        Write-Host "Device $($filteredStaleDevice.deviceName) (ID: $($filteredStaleDevice.id)) has been retired." -ForegroundColor Green
     }
+    Write-Host ''
 }
-$filteredStaleDevices += $filteredStaleDevicesOS
-
-
-foreach ($filteredStaleDevice in $filteredStaleDevices) {
-    Set-StaleManagedDevice -id $filteredStaleDevice.id
-}
-
+#endregion device retirement
