@@ -74,7 +74,6 @@ Run the script to retire all **Entra Registered** **Corporate owned** Intune dev
 .\IntuneDeviceCleaner.ps1 -deviceCheckInDays 100 -ownershipType company -joinType azureADRegistered
 ```
 
-
 ## 🎬 Demos
 
 Coming soon
