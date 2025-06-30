@@ -358,7 +358,7 @@ if ($operatingSystem) {
     Write-Host ''
 }
 else {
-    $filteredStaleDevicesOS += $allStaleDevices
+    $filteredStaleDevicesOS += $allStaleDevices | Where-Object { $_.operatingSystem -like "*$operatingSystem*" }
 }
 
 #ownership
@@ -370,7 +370,7 @@ if ($ownershipType) {
     Write-Host ''
 }
 else {
-    $filteredStaleDevicesOwnership += $allStaleDevices
+    $filteredStaleDevicesOwnership += $filteredStaleDevicesOS | Where-Object { $_.ownerType -like "*$ownershipType*" }
 }
 
 #enrolment
@@ -382,7 +382,7 @@ if ($enrolmentType) {
     Write-Host ''
 }
 else {
-    $filteredStaleDevicesEnrolment += $allStaleDevices
+    $filteredStaleDevicesEnrolment += $filteredStaleDevicesOwnership | Where-Object { $_.managementAgent -like "*$enrolmentType*" }
 }
 
 #joinType
@@ -394,7 +394,7 @@ if ($joinType) {
     Write-Host ''
 }
 else {
-    $filteredStaleDevicesJoin += $allStaleDevices
+    $filteredStaleDevicesJoin += $filteredStaleDevicesEnrolment | Where-Object { $_.deviceEnrollmentType -like "*$joinType*" }
 }
 
 #final filter
