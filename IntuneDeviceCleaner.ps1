@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 0.1
+.VERSION 0.2
 .GUID 1866ffe4-3800-4166-aaee-9b485b2cc051
 .AUTHOR Nick Benton
 .COMPANYNAME
@@ -14,6 +14,7 @@
 .EXTERNALSCRIPTDEPENDENCIES
 .RELEASENOTES
 v0.1 - Initial release
+v0.2 - Option to clean Entra objects, capture of BitLocker and FileVault recovery keys
 
 .PRIVATEDATA
 #>
@@ -27,6 +28,9 @@ IntuneDeviceCleaner
 
 .PARAMETER deviceCheckInDays
 Number of days since last device check-in to consider a device stale.
+
+.PARAMETER entraObject
+Option to disable, delete or ignore the Entra ID object of the device. Valid values are 'disable', 'delete', 'ignore'. Default is 'ignore'.
 
 .PARAMETER operatingSystem
 The operating system of the devices to filter by. Valid values are 'windows', 'ios', 'android', 'macos', 'linux'.
@@ -57,10 +61,10 @@ Interactive Authentication
 .\IntuneDeviceCleaner.ps1
 
 .NOTES
-Version:        0.1
+Version:        0.2
 Author:         Nick Benton
 WWW:            oddsandendpoints.co.uk
-Creation Date:  30/06/2025
+Creation Date:  03/07/2025
 #>
 
 [CmdletBinding(DefaultParameterSetName = 'Default')]
@@ -245,7 +249,7 @@ function Get-StaleManagedDevice() {
 }
 function Set-StaleManagedDevice() {
 
-    [cmdletbinding()]
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'low')]
     param
     (
         [parameter(Mandatory = $true)]
@@ -256,16 +260,25 @@ function Set-StaleManagedDevice() {
     $graphApiVersion = 'beta'
     $Resource = "deviceManagement/managedDevices('$id')/retire"
 
-    try {
+    if ($PSCmdlet.ShouldProcess('Retiring Intune managed device')) {
+        try {
 
-        $uri = "https://graph.microsoft.com/$graphApiVersion/$Resource"
-        Invoke-MgGraphRequest -Uri $uri -Method Post
+            $uri = "https://graph.microsoft.com/$graphApiVersion/$Resource"
+            Invoke-MgGraphRequest -Uri $uri -Method Post
 
+        }
+        catch {
+            Write-Error $Error[0].ErrorDetails.Message
+            break
+        }
     }
-    catch {
-        Write-Error $Error[0].ErrorDetails.Message
-        break
+    elseif ($WhatIfPreference.IsPresent) {
+        Write-Output 'Intune managed device would be retired'
     }
+    else {
+        Write-Output 'Intune managed device was not retired'
+    }
+
 }
 function Get-EntraIDObject() {
 
@@ -273,16 +286,14 @@ function Get-EntraIDObject() {
     param
     (
 
-        [parameter(Mandatory = $false)]
-        [switch]$user,
-
-        [parameter(Mandatory = $false, ParameterSetName = 'devices')]
-        [switch]$device
+        [parameter(Mandatory = $true)]
+        [ValidateSet('user', 'device')]
+        [string]$object
 
     )
 
     $graphApiVersion = 'beta'
-    if ($user) {
+    if ($object -eq 'user') {
         $Resource = "users?`$filter=userType eq 'member' and accountEnabled eq true"
     }
     else {
@@ -317,8 +328,7 @@ function Get-EntraIDObject() {
 }
 function Set-EntraIDObject() {
 
-    [cmdletbinding()]
-
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'low')]
     param
     (
         [parameter(Mandatory = $true)]
@@ -333,34 +343,35 @@ function Set-EntraIDObject() {
     $Resource = "devices/$Id"
     $uri = "https://graph.microsoft.com/$graphApiVersion/$($Resource)"
 
-    try {
-        if ($action -eq 'delete') {
-            $JSON = @'
+    if ($PSCmdlet.ShouldProcess('Disabling or deleting Entra ID object')) {
+        try {
+            if ($action -eq 'disable') {
+                $JSON = @'
         {
             "accountEnabled": false
         }
 '@
-            Test-JSONData -Json $JSON
-            Invoke-MgGraphRequest -Uri $uri -Method Patch -Body $JSON -ContentType 'application/json'
+                Test-JSONData -Json $JSON
+                Invoke-MgGraphRequest -Uri $uri -Method Patch -Body $JSON -ContentType 'application/json'
+            }
+            else {
+                Invoke-MgGraphRequest -Uri $uri -Method DELETE
+            }
         }
-        else {
-            Invoke-MgGraphRequest -Uri $uri -Method DELETE
+        catch {
+            Write-Error $_.Exception.Message
+            break
         }
     }
-    catch {
-        Write-Error $_.Exception.Message
-        break
+    elseif ($WhatIfPreference.IsPresent) {
+        Write-Output 'Entra ID object would be disabled or deleted'
+    }
+    else {
+        Write-Output 'Entra ID object was not disabled or deleted'
     }
 
-
-    try {
-
-    }
-    catch {
-
-    }
 }
-function Get-RecoveryKeys() {
+function Get-RecoveryKey() {
 
     [CmdletBinding(DefaultParameterSetName = 'Default')]
     param
@@ -377,7 +388,7 @@ function Get-RecoveryKeys() {
     try {
         $recoveryKeys = @()
         $graphApiVersion = 'beta'
-        if ($os = 'windows') {
+        if ($os -eq 'windows') {
             $Resource = "informationProtection/bitlocker/recoveryKeys?`$filter=deviceId%20eq%20%27$Id%27"
             $uri = "https://graph.microsoft.com/$graphApiVersion/$Resource"
             $keyObjects = (Invoke-MgGraphRequest -Uri $uri -Method Get -OutputType PSObject).value
@@ -419,17 +430,24 @@ Write-Host '
 
 Write-Host 'IntuneDeviceCleaner - Removal of stale devices based on additional criteria' -ForegroundColor Green
 Write-Host 'Nick Benton - oddsandendpoints.co.uk' -NoNewline;
-Write-Host ' | Version' -NoNewline; Write-Host ' 0.1 Public Preview' -ForegroundColor Yellow -NoNewline
-Write-Host ' | Last updated: ' -NoNewline; Write-Host '2025-06-30' -ForegroundColor Magenta
+Write-Host ' | Version' -NoNewline; Write-Host ' 0.2 Public Preview' -ForegroundColor Yellow -NoNewline
+Write-Host ' | Last updated: ' -NoNewline; Write-Host '2025-07-03' -ForegroundColor Magenta
 Write-Host ''
 Write-Host 'If you have any feedback, please open an issue at https://github.com/ennnbeee/AutopilotGroupTagger/issues' -ForegroundColor Cyan
+Write-Host ''
+if ($whatIf -eq $true) {
+    Write-Host "Starting the 'IntuneDeviceCleaner' Script in whatIf mode" -ForegroundColor Cyan
+}
+else {
+    Write-Host "Starting the 'IntuneDeviceCleaner' Script in production mode" -ForegroundColor Red
+}
 Write-Host ''
 #endregion intro
 
 #region testing
 <# For testing purposes, uncomment the following lines and set the parameters as needed.
 $deviceCheckInDays = 1
-$operatingSystem = 'windows'
+$operatingSystem = 'android'
 $ownershipType = 'company'
 $joinType = ''
 $enrolmentType = 'mdm'
@@ -438,6 +456,7 @@ $whatIf = $true
 #endregion testing
 
 #region variables
+$rndWait = Get-Random -Minimum 1 -Maximum 3
 $requiredScopes = @('DeviceManagementManagedDevices.ReadWrite.All', 'DeviceManagementManagedDevices.PrivilegedOperations.All', 'Device.ReadWrite.All', 'BitlockerKey.Read.All')
 [String[]]$scopes = $requiredScopes -join ', '
 #endregion variables
@@ -514,27 +533,28 @@ Write-Host ''
 Write-Host 'All required scope permissions are present.' -ForegroundColor Green
 #endregion scopes
 
-#region stale devices
-Write-Host "Checking for stale devices that haven't checked in for $deviceCheckInDays days..." -ForegroundColor Cyan
-$allStaleDevices = Get-StaleManagedDevice -days $deviceCheckInDays
-Write-Host "Found $($allStaleDevices.Count) stale devices that haven't checked in for $deviceCheckInDays days." -ForegroundColor Green
-Write-Host
-#endregion stale devices
-
 #region Entra devices
 Write-Host 'Getting Entra device objects...' -ForegroundColor Cyan
-$entraDevices = Get-EntraIDObject -device
+$entraDevices = Get-EntraIDObject -object device
 Write-Host "Found $($entraDevices.Count) devices from Entra ID." -ForegroundColor Green
 if ($entraDevices.Count -eq 0) {
     Write-Host 'Found no Windows devices in Entra.' -ForegroundColor Red
     break
 }
+Write-Host ''
 #optimising the entra device data
 $optEntraDevices = @{}
 foreach ($itemEntraDevice in $entraDevices) {
     $optEntraDevices[$itemEntraDevice.deviceid] = $itemEntraDevice
 }
 #endregion Entra devices
+
+#region stale devices
+Write-Host "Checking for stale devices that haven't checked in for $deviceCheckInDays days..." -ForegroundColor Cyan
+$allStaleDevices = Get-StaleManagedDevice -days $deviceCheckInDays
+Write-Host "Found $($allStaleDevices.Count) stale devices that haven't checked in for $deviceCheckInDays days." -ForegroundColor Green
+Write-Host
+#endregion stale devices
 
 #region device filtering
 #OS
@@ -596,43 +616,59 @@ if ($filteredStaleDevices.Count -eq 0) {
 else {
     Write-Host "Total stale devices after filtering: $($filteredStaleDevices.Count)" -ForegroundColor Green
     Write-Host ''
-    Write-Host 'The following devices will be retired:' -ForegroundColor Cyan
+    if ($whatIf -eq $true) {
+        Write-Host 'WhatIf mode is enabled the following devices would be retired.' -ForegroundColor Magenta
+    }
+    else {
+        Write-Host 'The following devices will be retired:' -ForegroundColor Cyan
+    }
     $filteredStaleDevices | ForEach-Object {
         Write-Host "$($_.deviceName), ID: $($_.id), Last Check-in: $($_.lastSyncDateTime)" -ForegroundColor white
     }
+    Write-Host ''
     Write-Warning 'Please review the devices above before proceeding with retirement.' -WarningAction Inquire
 }
 #endregion device filtering
 
 #region device retirement
 $staleDeviceDetails = @()
-foreach ($filteredStaleDevice in $filteredStaleDevices[0]) {
-
+foreach ($filteredStaleDevice in $filteredStaleDevices) {
+    Start-Sleep -Seconds $rndWait
     Write-Host "Processing stale device: $($filteredStaleDevice.deviceName) (ID: $($filteredStaleDevice.id))" -ForegroundColor Cyan
 
     $deviceObject = $optEntraDevices[$filteredStaleDevice.azureADDeviceId]
-    Write-Host "Getting device details from Entra ID for device $($filteredStaleDevice.deviceName) (ID: $($filteredStaleDevice.id))..." -ForegroundColor Cyan
+    Write-Host "Getting device details from Entra ID for device $($filteredStaleDevice.deviceName) (ID: $($filteredStaleDevice.id))..." -ForegroundColor White
     if ($filteredStaleDevice.operatingSystem -like '*windows*' -or $filteredStaleDevice.operatingSystem -like '*mac*') {
         Write-Host "Retrieving recovery keys for device $($filteredStaleDevice.deviceName) (ID: $($filteredStaleDevice.id))..." -ForegroundColor Cyan
         if ($filteredStaleDevice.operatingSystem -like '*windows*') {
-            $keys = Get-RecoveryKeys -Id $($deviceObject.deviceId) -os windows
+            $keys = Get-RecoveryKey -Id $($deviceObject.deviceId) -os windows
         }
         else {
-            $keys = Get-RecoveryKeys -Id $($deviceObject.deviceId) -os macos
+            $keys = Get-RecoveryKey -Id $($deviceObject.deviceId) -os macos
         }
         $staleDeviceDetails += [PSCustomObject]@{
-            Name     = $($filteredStaleDevice.deviceName)
-            IntuneId = $($filteredStaleDevice.id)
-            EntraID  = $($deviceObject.Id)
-            Keys     = $keys
+            name            = $($filteredStaleDevice.deviceName)
+            intuneId        = $($filteredStaleDevice.id)
+            entraId         = $($deviceObject.Id)
+            ownership       = $($filteredStaleDevice.ownerType)
+            lastCheckIn     = $($filteredStaleDevice.lastSyncDateTime)
+            osVersion       = $($filteredStaleDevice.osVersion)
+            userPrincipal   = $($filteredStaleDevice.userPrincipalName)
+            userDisplayName = $($filteredStaleDevice.userDisplayName)
+            Keys            = [string]$keys
         }
     }
     else {
         $staleDeviceDetails += [PSCustomObject]@{
-            Name     = $($filteredStaleDevice.deviceName)
-            IntuneId = $($filteredStaleDevice.id)
-            EntraID  = $($deviceObject.Id)
-            Keys     = 'No recovery keys available for this device type.'
+            name            = $($filteredStaleDevice.deviceName)
+            intuneId        = $($filteredStaleDevice.id)
+            entraId         = $($deviceObject.Id)
+            ownership       = $($filteredStaleDevice.ownerType)
+            lastCheckIn     = $($filteredStaleDevice.lastSyncDateTime)
+            osVersion       = $($filteredStaleDevice.osVersion)
+            userPrincipal   = $($filteredStaleDevice.userPrincipalName)
+            userDisplayName = $($filteredStaleDevice.userDisplayName)
+            Keys            = $null
         }
     }
 
@@ -671,11 +707,12 @@ foreach ($filteredStaleDevice in $filteredStaleDevices[0]) {
         }
     }
     else {
-        Write-Host "Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $deviceObjectId will be ignored." -ForegroundColor Green
+        Write-Host "Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) will be ignored." -ForegroundColor Green
     }
     #endregion Entra ID Object
     Write-Host ''
 }
-
-Out-File -FilePath 'IntuneDeviceCleaner.csv' -InputObject $staleDeviceDetails -NoClobber | Out-Null
+$csv = "IntuneDeviceCleaner-$(Get-Date -Format yyyy-MM-dd).csv"
+$staleDeviceDetails | Export-Csv -Path $csv -NoTypeInformation -Encoding UTF8
+Write-Host "Stale device details have been saved to $csv." -ForegroundColor Green
 #endregion device retirement

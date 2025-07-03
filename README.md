@@ -31,6 +31,8 @@ IntuneDeviceCleaner is currently in Public Preview, meaning that although the it
 
 - **v0.2**
   - Supports capture of devices not contacting Intune between 1 and 730 days
+  - Option to either ignore, disable, or delete the associated Entra ID object
+  - Capture retired device data including BitLocker and FileVault recovery keys
 - v0.1
   - Initial release
 
@@ -40,6 +42,8 @@ The PowerShell script requires the below Graph API permissions, you can create a
 
 - `DeviceManagementManagedDevices.ReadWrite.All`
 - `DeviceManagementManagedDevices.PrivilegedOperations.All`
+- `Device.ReadWrite.All`
+- `BitlockerKey.Read.All`
 
 ## ⏯ Usage
 
@@ -47,18 +51,18 @@ Download the `IntuneDeviceCleaner.ps1` script, and from the saved location in a 
 
 ### 🧪 Testing
 
-Run the script to retire all Intune devices that have not checked in within **730** days in **whatIf** mode where no devices are retired:
+Run the script to retire all Intune devices that have not checked in within **730** days, and disable the associated Entra ID objects in **whatIf** mode where no devices are retired:
 
 ```powershell
-.\IntuneDeviceCleaner.ps1 -deviceCheckInDays 730 -whatIf $true
+.\IntuneDeviceCleaner.ps1 -deviceCheckInDays 730 -entraObject disable -whatIf $true
 ```
 
 ### 📱 Android Devices
 
-Run the script to retire all **Android** Intune devices that have not checked in within **15** days:
+Run the script to retire all **Android** Intune devices that have not checked in within **15** days, and delete the associated Entra ID object:
 
 ```powershell
-.\IntuneDeviceCleaner.ps1 -deviceCheckInDays 15 -operatingSystem android
+.\IntuneDeviceCleaner.ps1 -deviceCheckInDays 15 -operatingSystem android -entraObject delete
 ```
 
 ### ☁🖥 Entra Joined Windows Devices
