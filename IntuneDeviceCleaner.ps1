@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 0.2
+.VERSION 0.2.1
 .GUID 1866ffe4-3800-4166-aaee-9b485b2cc051
 .AUTHOR Nick Benton
 .COMPANYNAME
@@ -15,6 +15,7 @@
 .RELEASENOTES
 v0.1 - Initial release
 v0.2 - Option to clean Entra objects, capture of BitLocker and FileVault recovery keys
+v0.2.1 - Bug fixes
 
 .PRIVATEDATA
 #>
@@ -61,7 +62,7 @@ Interactive Authentication
 .\IntuneDeviceCleaner.ps1
 
 .NOTES
-Version:        0.2
+Version:        0.2.1
 Author:         Nick Benton
 WWW:            oddsandendpoints.co.uk
 Creation Date:  03/07/2025
@@ -430,7 +431,7 @@ Write-Host '
 
 Write-Host 'IntuneDeviceCleaner - Removal of stale devices based on additional criteria' -ForegroundColor Green
 Write-Host 'Nick Benton - oddsandendpoints.co.uk' -NoNewline;
-Write-Host ' | Version' -NoNewline; Write-Host ' 0.2 Public Preview' -ForegroundColor Yellow -NoNewline
+Write-Host ' | Version' -NoNewline; Write-Host ' 0.2.1 Public Preview' -ForegroundColor Yellow -NoNewline
 Write-Host ' | Last updated: ' -NoNewline; Write-Host '2025-07-03' -ForegroundColor Magenta
 Write-Host ''
 Write-Host 'If you have any feedback, please open an issue at https://github.com/ennnbeee/AutopilotGroupTagger/issues' -ForegroundColor Cyan
@@ -447,10 +448,11 @@ Write-Host ''
 #region testing
 <# For testing purposes, uncomment the following lines and set the parameters as needed.
 $deviceCheckInDays = 1
-$operatingSystem = 'android'
+$operatingSystem = 'windows'
 $ownershipType = 'company'
 $joinType = ''
 $enrolmentType = 'mdm'
+$entraObject = 'delete'
 $whatIf = $true
 #>
 #endregion testing
@@ -627,6 +629,7 @@ else {
     }
     Write-Host ''
     Write-Warning 'Please review the devices above before proceeding with retirement.' -WarningAction Inquire
+    Write-Host ''
 }
 #endregion device filtering
 
@@ -641,10 +644,22 @@ foreach ($filteredStaleDevice in $filteredStaleDevices) {
     if ($filteredStaleDevice.operatingSystem -like '*windows*' -or $filteredStaleDevice.operatingSystem -like '*mac*') {
         Write-Host "Retrieving recovery keys for device $($filteredStaleDevice.deviceName) (ID: $($filteredStaleDevice.id))..." -ForegroundColor Cyan
         if ($filteredStaleDevice.operatingSystem -like '*windows*') {
-            $keys = Get-RecoveryKey -Id $($deviceObject.deviceId) -os windows
+            if (([string]::IsNullOrEmpty($deviceObject))) {
+                $keys = $null
+            }
+            else {
+                $keys = Get-RecoveryKey -Id $($deviceObject.deviceId) -os windows
+            }
+
         }
         else {
-            $keys = Get-RecoveryKey -Id $($deviceObject.deviceId) -os macos
+            if (([string]::IsNullOrEmpty($deviceObject))) {
+                $keys = $null
+            }
+            else {
+                $keys = Get-RecoveryKey -Id $($deviceObject.deviceId) -os macos
+            }
+
         }
         $staleDeviceDetails += [PSCustomObject]@{
             name            = $($filteredStaleDevice.deviceName)
@@ -655,7 +670,7 @@ foreach ($filteredStaleDevice in $filteredStaleDevices) {
             osVersion       = $($filteredStaleDevice.osVersion)
             userPrincipal   = $($filteredStaleDevice.userPrincipalName)
             userDisplayName = $($filteredStaleDevice.userDisplayName)
-            Keys            = [string]$keys
+            recoveryKeys    = [string]$keys
         }
     }
     else {
@@ -668,7 +683,7 @@ foreach ($filteredStaleDevice in $filteredStaleDevices) {
             osVersion       = $($filteredStaleDevice.osVersion)
             userPrincipal   = $($filteredStaleDevice.userPrincipalName)
             userDisplayName = $($filteredStaleDevice.userDisplayName)
-            Keys            = $null
+            recoveryKeys    = $null
         }
     }
 
@@ -681,38 +696,44 @@ foreach ($filteredStaleDevice in $filteredStaleDevices) {
     }
 
     #region Entra ID Object
-    if ($entraObject -eq 'disable') {
-        if ($whatIf -eq $true) {
-            Write-Host "WhatIf mode enabled: Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) would be disabled." -ForegroundColor Magenta
-        }
-        else {
-            Set-EntraIDObject -Id $deviceObject.Id -Action disable
-            Write-Host "Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) has been disabled." -ForegroundColor Green
-        }
-
+    if (([string]::IsNullOrEmpty($deviceObject))) {
+        Write-Host "No Entra ID object found for device $($filteredStaleDevice.deviceName) (ID: $($filteredStaleDevice.id)). Skipping EntraObject settings." -ForegroundColor Yellow
     }
-    elseif ($entraObject -eq 'delete') {
-        if ($whatIf -eq $true) {
-            Write-Host "WhatIf mode enabled: Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) would be deleted." -ForegroundColor Magenta
+    else {
+        if ($entraObject -eq 'disable') {
+            if ($whatIf -eq $true) {
+                Write-Host "WhatIf mode enabled: Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) would be disabled." -ForegroundColor Magenta
+            }
+            else {
+                Set-EntraIDObject -Id $deviceObject.Id -Action disable
+                Write-Host "Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) has been disabled." -ForegroundColor Green
+            }
+
         }
-        else {
+        elseif ($entraObject -eq 'delete') {
             #autopilot devices
-            if (([string]::IsNullOrEmpty($deviceObject.physicalIds))) {
+            if (!([string]::IsNullOrEmpty($deviceObject.physicalIds))) {
                 Write-Host "Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) is an Autopilot device and cannot be deleted." -ForegroundColor Yellow
             }
             else {
-                Set-EntraIDObject -Id $deviceObject.Id -Action delete
-                Write-Host "Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) has been deleted." -ForegroundColor Green
+                if ($whatIf -eq $true) {
+                    Write-Host "WhatIf mode enabled: Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) would be deleted." -ForegroundColor Magenta
+                }
+                else {
+                    Set-EntraIDObject -Id $deviceObject.Id -Action delete
+                    Write-Host "Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) has been deleted." -ForegroundColor Green
+                }
             }
         }
+        else {
+            Write-Host "Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) will be ignored." -ForegroundColor Green
+        }
     }
-    else {
-        Write-Host "Entra ID object for device $($filteredStaleDevice.deviceName) (ID: $($deviceObject.Id) will be ignored." -ForegroundColor Green
-    }
+
     #endregion Entra ID Object
     Write-Host ''
 }
-$csv = "IntuneDeviceCleaner-$(Get-Date -Format yyyy-MM-dd).csv"
+$csv = "IntuneDeviceCleaner-$(Get-Date -Format yyyyMMdd-HHmm).csv"
 $staleDeviceDetails | Export-Csv -Path $csv -NoTypeInformation -Encoding UTF8
 Write-Host "Stale device details have been saved to $csv." -ForegroundColor Green
 #endregion device retirement

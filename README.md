@@ -29,7 +29,9 @@ IntuneDeviceCleaner is currently in Public Preview, meaning that although the it
 
 ## 🔄 Updates
 
-- **v0.2**
+- **v0.2.1**
+  - Bug fixes
+- v0.2
   - Supports capture of devices not contacting Intune between 1 and 730 days
   - Option to either ignore, disable, or delete the associated Entra ID object
   - Capture retired device data including BitLocker and FileVault recovery keys
